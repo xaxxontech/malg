@@ -27,6 +27,8 @@ ODOMETRY_REPORT = 'k' (report current encoder and gyro counts, then zero counts)
 #include <EEPROM.h>
 
 #define GYRO 0x58
+#define WHIGH 1 // reverse 0/1 if wheels wired backwards
+#define WLOW 0  // reverse 0/1 if wheels wired backwards
 
 // hbridge 
 const int pwmA = 3; // pwm
@@ -130,7 +132,7 @@ void setup() {
 	
 	// horiz servo
 	int m = (int) EEPROM.read(eepromAddress);
-	Serial.println(m);
+	// Serial.println(m);
 	if (m > 30 && m < 100) { // within range where it looks like its been set properly before 		
 		camservo.attach(servoPin);  
 		camservo.write(m);
@@ -274,48 +276,49 @@ void parseCommand(){
 		analogWrite(pwmB, buffer[2]);
 
 		if (buffer[0] == 'f') { // forward
-			digitalWrite(in1, LOW);
-			digitalWrite(in2, HIGH);
-			digitalWrite(in3, HIGH);
-			digitalWrite(in4, LOW);
+			digitalWrite(in1, WLOW);
+			digitalWrite(in2, WHIGH);
+			digitalWrite(in3, WHIGH);
+			digitalWrite(in4, WLOW);
 			
 			stopPending = false;
 			stopped = false;
-			directioncmd =2;
+			directioncmd =1;
 		}
 
 		else if (buffer[0] == 'b') { // backward
-			digitalWrite(in1, HIGH);
-			digitalWrite(in2, LOW);
-			digitalWrite(in3, LOW);
-			digitalWrite(in4, HIGH);
+			digitalWrite(in1, WHIGH);
+			digitalWrite(in2, WLOW);
+			digitalWrite(in3, WLOW);
+			digitalWrite(in4, WHIGH);
 			
 			stopPending = false;
 			stopped = false;
-			directioncmd = 1;
+			directioncmd = 2;
 		}
 
-		else if (buffer[0] == 'r') { // right
-			digitalWrite(in1, LOW);
-			digitalWrite(in2, HIGH);
-			digitalWrite(in3, LOW);
-			digitalWrite(in4, HIGH);
+		else if (buffer[0] == 'l') { // left
+			digitalWrite(in1, WHIGH);
+			digitalWrite(in2, WLOW);
+			digitalWrite(in3, WHIGH);
+			digitalWrite(in4, WLOW);
 			
 			stopPending = false;
 			stopped = false;
 			directioncmd=3;
-		}
-
-		else if (buffer[0] == 'l') { // left
-			digitalWrite(in1, HIGH);
-			digitalWrite(in2, LOW);
-			digitalWrite(in3, HIGH);
-			digitalWrite(in4, LOW);
+		} 
+		
+		else if (buffer[0] == 'r') { // right
+			digitalWrite(in1, WLOW);
+			digitalWrite(in2, WHIGH);
+			digitalWrite(in3, WLOW);
+			digitalWrite(in4, WHIGH);
 			
 			stopPending = false;
 			stopped = false;
 			directioncmd=4;
-		} 
+		}
+		
 	}
 
 	else if (buffer[0] == 's') { // stop
@@ -329,10 +332,10 @@ void parseCommand(){
 	}
 	
 	else if (buffer[0] == 'h') { // hard stop
-		digitalWrite(in1, LOW);
-		digitalWrite(in2, LOW);
-		digitalWrite(in3, LOW);
-		digitalWrite(in4, LOW);
+		digitalWrite(in1, 0);
+		digitalWrite(in2, 0);
+		digitalWrite(in3, 0);
+		digitalWrite(in4, 0);
 		if (!stopped) {
 			stopCommand = time;
 			stopPending = true;	
