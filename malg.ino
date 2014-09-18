@@ -1,10 +1,12 @@
 /*
 ASCII Serial Commands
 
-FORWARD = 'f', [0-255] (speed) 
-BACKWARD = 'b', [0-255] (speed)
-LEFT = 'l', [0-255] (speed)
-RIGHT = 'r', [0-255] (speed)
+FORWARD = 'f', [0-255][0-255] (speed for each wheel) 
+BACKWARD = 'b', [0-255][0-255] (speed for each wheel)
+LEFT = 'l', [0-255][0-255] (speed for each wheel)
+RIGHT = 'r', [0-255][0-255] (speed for each wheel)
+LEFTTIMED = 'z'. [0-255][0-255] (speed for each wheel) [0-255][0-255] DWORD milliseconds
+RIGHTTIMED = 'e'. [0-255] (speed) [0-255][0-255] DWORD milliseconds
 CAM = 'v', [0-255] (servo angle)  
 CAM RELEASE = 'w' (servo release)
 CAM HORIZ SET = 'm' [0-255] (write horizontal position to eeprom)
@@ -59,6 +61,7 @@ const int encA = A0;
 unsigned long time = 0;
 unsigned long lastcmd = 0;
 const int TIMEOUT = 10000; // stop motors if no commands 
+unsigned long stoptime = 0;
 
 // command byte buffer 
 const int MAX_BUFFER = 8;
@@ -169,7 +172,7 @@ void loop(){
 			// lastGyroFifoRead =  time;
 			getGyroFIFOcontents(); // this causes noticeable lag in java accell especially if spd fast
 			boolean checkstop = false;
-			if (stopPending && (directioncmd ==3 || directioncmd==4) ) checkstop = true;
+			if (stopPending && (directioncmd ==3 || directioncmd==4) && time- lastcmd > 80) checkstop = true;
 			boolean callstopdetect = false;
 
 			for (int i=0; i<gyroThreshold/2; i++ ){
@@ -207,6 +210,11 @@ void loop(){
 		if (readEncoder && stopPending && (directioncmd==1 || directioncmd==2) ) {
 			stopDetect();
 		}
+	}
+	
+	if (stoptime != 0 && time > stoptime) {
+		stop();
+		stoptime = 0;
 	}
 	
 	// manage serial input
@@ -271,7 +279,8 @@ void parseCommand(){
 	}
 
 	// always set speed on each move command 
-	else if((buffer[0] == 'f') || (buffer[0] == 'b') || (buffer[0] == 'l') || (buffer[0] == 'r')){
+	else if(buffer[0] == 'f' || buffer[0] == 'b' || buffer[0] == 'l' || buffer[0] == 'r'
+			|| buffer[0] == 'z' || buffer[0] == 'e') {
 		analogWrite(pwmA, buffer[1]); 
 		analogWrite(pwmB, buffer[2]);
 
@@ -319,16 +328,40 @@ void parseCommand(){
 			directioncmd=4;
 		}
 		
+		else if (buffer[0] == 'z') { // lefttimed
+			digitalWrite(in1, WHIGH);
+			digitalWrite(in2, WLOW);
+			digitalWrite(in3, WHIGH);
+			digitalWrite(in4, WLOW);
+			
+			stopPending = false;
+			stopped = false;
+			directioncmd=3;
+			// unsigned long delay = buffer[3]<<8 | buffer[4];
+			// if (delay > 1000) { delay = 1000; }
+			// stoptime = time + delay;
+			stoptime = time + (buffer[3]<<8 | buffer[4]);
+		}
+		
+		else if (buffer[0] == 'e') { // righttimed
+			digitalWrite(in1, WLOW);
+			digitalWrite(in2, WHIGH);
+			digitalWrite(in3, WLOW);
+			digitalWrite(in4, WHIGH);
+			
+			stopPending = false;
+			stopped = false;
+			directioncmd=4;
+			// unsigned long delay = buffer[3]<<8 | buffer[4];
+			// if (delay > 1000) { delay = 1000; }
+			// stoptime = time + delay;
+			stoptime = time + (buffer[3]<<8 | buffer[4]);
+		}
+		
 	}
 
 	else if (buffer[0] == 's') { // stop
-		analogWrite(pwmA, 0); 
-		analogWrite(pwmB, 0);
-		
-		if (!stopped) {
-			stopCommand = time;
-			stopPending = true;	
-		}
+		stop();
 	}
 	
 	else if (buffer[0] == 'h') { // hard stop
@@ -344,7 +377,7 @@ void parseCommand(){
 
 	else if(buffer[0] == 'x') Serial.println("<id::malg>");
 
-	else if(buffer[0] == 'y') Serial.println("<version:0.1>"); 
+	else if(buffer[0] == 'y') Serial.println("<version:0.1.1>"); 
   
 	else if (buffer[0] == 'i') { // gyro and encoder start
 		encoderPinAtZero = false;
@@ -471,6 +504,17 @@ void printMoved() {
 	Serial.print(" ");
 	Serial.print(a);
 	Serial.println(">");
+}
+
+
+void stop() {
+	analogWrite(pwmA, 0); 
+	analogWrite(pwmB, 0);
+	
+	if (!stopped) {
+		stopCommand = time;
+		stopPending = true;	
+	}
 }
 
 void stopDetect() {
