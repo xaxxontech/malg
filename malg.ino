@@ -20,17 +20,36 @@ SPOT LIGHT = 'p', [0-255] (intensity)
 ODOMETRY_START = 'i' (start recording encoder and gyro, zero values)
 ODOMETRY_STOP = 'j' (stop recording encoder and gyro, and report)
 ODOMETRY_REPORT = 'k' (report current encoder and gyro counts, then zero counts)
-
+PING = 'c' (heartbeat)
+EEPROM_CLEAR = '8' (set entire eeprom bank to 0)
+EEPROM_READ = '9' (read camhoriz position) 
 */
 
+/*
+ * gyro function
+ * 
+ * config:
+ * read z only, 500Mz rate, 250 degrees-per-second resolution
+ * write to 256 value FIFO buffer, overwrite continuously, trigger interrupt at 126 full
+ * 
+ * when motors stopped, calibrate zero every 2 seconds
+ * 
+ * angle reading is cummulative, as gyro produces rate data (degrees per second)
+ * if active (not stopped, and readangle boolean true), 
+ * check if fifo threshold reached every loop, if so read up to threshold and add to angle
+ * 
+ * if info requested or stop detected, pring angle to serial, start from 0 again
+ * 
+ * 
+ */
  
 #include <I2C.h> 
 #include <Servo.h> 
 #include <EEPROM.h>
 
 #define GYRO 0x58
-#define WHIGH 1 // reverse 0/1 if wheels wired backwards
-#define WLOW 0  // reverse 0/1 if wheels wired backwards
+#define WHIGH 0 // 0 = default, reverse 0/1 if wheels wired backwards
+#define WLOW 1  // 1 = default, reverse 0/1 if wheels wired backwards
 
 // hbridge 
 const int pwmA = 3; // pwm
@@ -60,7 +79,7 @@ const int encA = A0;
 // timers 
 unsigned long time = 0;
 unsigned long lastcmd = 0;
-const int TIMEOUT = 10000; // stop motors if no commands 
+const unsigned long hostTimeout = 10000; // stop motors if no steady ping from host
 unsigned long stoptime = 0;
 
 // command byte buffer 
@@ -105,8 +124,17 @@ const unsigned long allowforstop = 1000;
 
 
 void setup() { 
-	Serial.begin(115200);
-	Serial.println("<reset>"); 
+
+	// horiz servo
+	int m = (int) EEPROM.read(eepromAddress);
+	if (m < 30 || m > 100) { // not within range where it looks like its been set properly before 		
+		m = 70;  //default
+		EEPROM.write(eepromAddress, m);
+	} 
+	camservo.attach(servoPin);  
+	camservo.write(m);
+	delay(500);
+	camservo.detach();
   
 	pinMode(pwmA, OUTPUT);
 	pinMode(pwmB, OUTPUT);
@@ -133,14 +161,6 @@ void setup() {
 	digitalWrite(in3, HIGH);
 	digitalWrite(in4, LOW);
 	
-	// horiz servo
-	int m = (int) EEPROM.read(eepromAddress);
-	// Serial.println(m);
-	if (m > 30 && m < 100) { // within range where it looks like its been set properly before 		
-		camservo.attach(servoPin);  
-		camservo.write(m);
-	} 
-	
 	// gyro seup
 	I2c.begin();  
 	I2c.setSpeed(1); // fast
@@ -159,6 +179,9 @@ void setup() {
 	PCICR =0x02;          // Enable PCINT1 interrupt
 	PCMSK1 = 0b00000001; // mask A0
 	sei();   // switch back on
+	
+	Serial.begin(115200);
+	Serial.println("<reset>"); 
 
 }
 
@@ -219,16 +242,14 @@ void loop(){
 	
 	// manage serial input
 	if( Serial.available() > 0) {
-		manageCommand();
 		lastcmd = time;
-
+		manageCommand();
 	}
-	// else if (time - lastcmd > TIMEOUT){ 
-		 // //if no comm with host, stop motors
-		 // analogWrite(pwmA, 0); 
-		 // analogWrite(pwmB, 0);
-		 // lastcmd = time; 
-	// }
+	else if (time - hostTimeout > lastcmd ){ 
+		 //if no comm with host, stop motors
+		 allOff();
+		 lastcmd = time; 
+	}
 
 }
 
@@ -248,6 +269,13 @@ void manageCommand() {
 	}
 }
 
+void allOff() {
+	analogWrite(floodPWMPin, 0);
+	analogWrite(spotPin, 0);
+	analogWrite(pwmA, 0); 
+	analogWrite(pwmB, 0);
+	camservo.detach();
+}
 
 void parseCommand(){
   
@@ -377,7 +405,9 @@ void parseCommand(){
 
 	else if(buffer[0] == 'x') Serial.println("<id::malg>");
 
-	else if(buffer[0] == 'y') Serial.println("<version:0.1.1>"); 
+	else if(buffer[0] == 'y') version();
+	
+	else if (buffer[0] == 'c') Serial.println(""); // ping, single character to make it quick
   
 	else if (buffer[0] == 'i') { // gyro and encoder start
 		encoderPinAtZero = false;
@@ -400,50 +430,19 @@ void parseCommand(){
 	else if (buffer[0] == 'k') { // ODOMETRY_REPORT 
 		printMoved();	
 	}
-	else if (buffer[0] == '1') {
-		// Serial.print(getZ());
-		// Serial.print(", ");
-		// Serial.println(digitalRead(encA));
-		
-		// if (checkGyroFIFOFull() ) {
-			// getGyroFIFOcontents();
-			// Serial.println(gyroZ[0]);
-		// }
-		// 
-		// Serial.println(encoderTicks);
-		
-		Serial.println(fifoFillTime());
+	
+	else if (buffer[0] == '8') { // clear eeprom
+		for (int i = 0; i < 512; i++)
+			EEPROM.write(i, 0);
+		Serial.println("<eeprom erased>");
 	}
-	else if (buffer[0] == '2') {
-		if (checkGyroFIFOFull) { Serial.println("fifo threshold full"); }
-		else { Serial.println("fifo not at threshold"); }
+	else if (buffer[0] == '9') { // read eeprom
+		int i = EEPROM.read(eepromAddress);
+		Serial.print("<horiz_eeprom: ");
+		Serial.print(i);
+		Serial.println(">");
 	}
-	else if (buffer[0] == '3') {
-		while (true) {
-			I2c.read(GYRO, 0x3E, 1); // FIFO_DATA
-			int n =I2c.receive();  
-			I2c.read(GYRO, 0x3D, 1); // FIFO_STATUS
-			int status = I2c.receive();
-			if (bitRead(status, 3) ==1) { break; }// FIFO_RD_EMPTY  // 513-517 
-		}
-		unsigned long t = millis()/timemult;
-		while (!checkGyroFIFOFull()) {}
-		unsigned long dt = millis()/timemult - t;
-		Serial.println(dt);
-	}
-	else if (buffer[0] ==  '4') {
-		while (!checkGyroFIFOFull()) {}
-		getGyroFIFOcontents();
-		// Serial.println(getZ());
-		Serial.println(gyroZ[0]);
-	}
-	else if (buffer[0] == '5') { // TODO: doesn't help, try doing fifo disable/enable
-		I2c.write(GYRO, 0x00, 0); // POWER_CFG  power down
-		delay(1000*timemult);
-		I2c.write(GYRO, 0x00, 204); // POWER_CFG  11 001 1 0 0  250dps, Pwr Normal, Zon
-		Serial.println("gyro power cycled");
-	}
-
+	
 /* end of command buffer[0] list */	
 
 	
@@ -542,32 +541,7 @@ ISR(PCINT1_vect) {
 	}
 }
 
-unsigned long fifoFillTime() { // FIFO TESTING
-
-	unsigned long t = 0;
-	unsigned long dt = 0;
-	int full = 0;
-
-	while (true) {
-		I2c.read(GYRO, 0x3E, 1); // FIFO_DATA
-		int n =I2c.receive();  
-		I2c.read(GYRO, 0x3D, 1); // FIFO_STATUS
-		int status = I2c.receive();
-		if (bitRead(status, 3) ==1) { break; }// FIFO_RD_EMPTY  // 513-517 
-	}
-	
-	// FIFO should be pretty much empty now
-	// now wait for threshold full
-	
-	t = millis()/timemult;
-	while (full != 1) {
-		I2c.read(GYRO, 0x3D, 1); // FIFO_STATUS
-		byte status = I2c.receive();
-		// full = bitRead(status, 2); // FIFO_TH (data above threshold)
-		full = bitRead(status, 1); // FIFO_FULL 
-	}
-	dt = millis()/timemult - t; 
-	return dt;
-
+void version() {
+	Serial.println("<version:0.125"); 
 }
 
