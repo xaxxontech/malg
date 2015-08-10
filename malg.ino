@@ -83,7 +83,7 @@ const unsigned long hostTimeout = 10000; // stop motors if no steady ping from h
 unsigned long stoptime = 0;
 
 // command byte buffer 
-const int MAX_BUFFER = 8;
+const int MAX_BUFFER = 32;
 int buffer[MAX_BUFFER];
 int commandSize = 0;
 
@@ -542,6 +542,6 @@ ISR(PCINT1_vect) {
 }
 
 void version() {
-	Serial.println("<version:0.125"); 
+	Serial.println("<version:0.127>"); 
 }
 

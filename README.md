@@ -1,6 +1,6 @@
 # MALG #
 
-Firware for [Xaxxon MALG PCB](http://www.xaxxon.com/xaxxon/malg)
+Firmware for [Xaxxon MALG PCB](http://www.xaxxon.com/xaxxon/malg)
 
 Arduino IDE sketch
 
