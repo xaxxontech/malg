@@ -5,6 +5,8 @@ FORWARD = 'f', [0-255][0-255] (speed for each wheel)
 BACKWARD = 'b', [0-255][0-255] (speed for each wheel)
 LEFT = 'l', [0-255][0-255] (speed for each wheel)
 RIGHT = 'r', [0-255][0-255] (speed for each wheel)
+FORWARDTIMED = 't' [0-255][0-255] (speed for each wheel) [0-255][0-255] DWORD milliseconds
+BACKWARDTIMED = 'u' [0-255][0-255] (speed for each wheel) [0-255][0-255] DWORD milliseconds
 LEFTTIMED = 'z'. [0-255][0-255] (speed for each wheel) [0-255][0-255] DWORD milliseconds
 RIGHTTIMED = 'e'. [0-255] (speed) [0-255][0-255] DWORD milliseconds
 CAM = 'v', [0-255] (servo angle)  
@@ -38,7 +40,7 @@ EEPROM_READ = '9' (read camhoriz position)
  * if active (not stopped, and readangle boolean true), 
  * check if fifo threshold reached every loop, if so read up to threshold and add to angle
  * 
- * if info requested or stop detected, pring angle to serial, start from 0 again
+ * if info requested or stop detected, print angle to serial, start from 0 again
  * 
  * 
  */
@@ -308,7 +310,7 @@ void parseCommand(){
 
 	// always set speed on each move command 
 	else if(buffer[0] == 'f' || buffer[0] == 'b' || buffer[0] == 'l' || buffer[0] == 'r'
-			|| buffer[0] == 'z' || buffer[0] == 'e') {
+			|| buffer[0] == 'z' || buffer[0] == 'e' || buffer[0] == 't' || buffer[0] == 'u') {
 		analogWrite(pwmA, buffer[1]); 
 		analogWrite(pwmB, buffer[2]);
 
@@ -385,7 +387,29 @@ void parseCommand(){
 			// stoptime = time + delay;
 			stoptime = time + (buffer[3]<<8 | buffer[4]);
 		}
-		
+		else if (buffer[0] == 't') { // forwardtimed
+			digitalWrite(in1, WLOW);
+			digitalWrite(in2, WHIGH);
+			digitalWrite(in3, WHIGH);
+			digitalWrite(in4, WLOW);
+			
+			stopPending = false;
+			stopped = false;
+			directioncmd=1;
+			stoptime = time + (buffer[3]<<8 | buffer[4]);
+		}
+		else if (buffer[0] == 'u') { // backwardtimed
+			digitalWrite(in1, WHIGH);
+			digitalWrite(in2, WLOW);
+			digitalWrite(in3, WLOW);
+			digitalWrite(in4, WHIGH);
+			
+			stopPending = false;
+			stopped = false;
+			directioncmd=2;
+			stoptime = time + (buffer[3]<<8 | buffer[4]);
+		}
+	
 	}
 
 	else if (buffer[0] == 's') { // stop
@@ -513,6 +537,7 @@ void stop() {
 	if (!stopped) {
 		stopCommand = time;
 		stopPending = true;	
+		stoptime = 0;
 	}
 }
 
@@ -542,6 +567,6 @@ ISR(PCINT1_vect) {
 }
 
 void version() {
-	Serial.println("<version:0.127>"); 
+	Serial.println("<version:0.128>"); 
 }
 
