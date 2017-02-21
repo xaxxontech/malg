@@ -25,6 +25,7 @@ ODOMETRY_REPORT = 'k' (report current encoder and gyro counts, then zero counts)
 PING = 'c' (heartbeat)
 EEPROM_CLEAR = '8' (set entire eeprom bank to 0)
 EEPROM_READ = '9' (read camhoriz position) 
+SEND_SLAVEI2C_BYTE = 'a' [0-255] (send specified byte to I2C slave, optional peripheral)
 */
 
 /*
@@ -50,6 +51,7 @@ EEPROM_READ = '9' (read camhoriz position)
 #include <EEPROM.h>
 
 #define GYRO 0x58
+#define SLAVEI2C 0x08
 #define WHIGH 0 // 0 = default, reverse 0/1 if wheels wired backwards
 #define WLOW 1  // 1 = default, reverse 0/1 if wheels wired backwards
 
@@ -466,6 +468,9 @@ void parseCommand(){
 		Serial.print(i);
 		Serial.println(">");
 	}
+	else if (buffer[0] == 'a') {
+		I2c.write(SLAVEI2C, 0x00, buffer[1]);
+	}
 	
 /* end of command buffer[0] list */	
 
@@ -567,6 +572,6 @@ ISR(PCINT1_vect) {
 }
 
 void version() {
-	Serial.println("<version:0.128>"); 
+	Serial.println("<version:0.129>"); 
 }
 
