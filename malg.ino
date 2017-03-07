@@ -168,6 +168,7 @@ void setup() {
 	// gyro seup
 	I2c.begin();  
 	I2c.setSpeed(1); // fast
+	I2c.timeOut(1000);
 	I2c.write(GYRO, 0x00, 204); // POWER_CFG  11 001 1 0 0  250dps, Pwr Normal, Zon
 	I2c.write(GYRO, 0x01, 32);  // SENSE_CFG1 00 1000 0 0 50Hz LPF 
 	I2c.write(GYRO, 0x02, 19);  // SENSE_CFG2   500Hz sample rate
